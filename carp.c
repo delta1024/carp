@@ -1,3 +1,4 @@
+#include <dirent.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -133,12 +134,20 @@ defer:
 }
 
 bool compile_build(Compile *c) {
+  DIR* build_dir = opendir("build");
+  if (build_dir == NULL) {
+    mkdir("build", 775);
+  } else {
+    closedir(build_dir);
+  }
   StringBuilder sb = {0, 0, NULL};
-
+  char *out_path = malloc(strlen("build/") + strlen(c->name));
+  if (out_path == NULL) return false;
+  sprintf(out_path, "build/%s", c->name);
   char *args[] = {
       "cc",
       "-o",
-      c->name,
+      out_path,
   };
   if (!sb_append_many(&sb, args, sizeof(args) / sizeof(char *)))
     return false;
@@ -153,7 +162,7 @@ bool compile_build(Compile *c) {
   printf("[BUILD] %s: %s\n", c->name, sb.string);
   if (system(sb.string) == -1)
     return false;
-  c->output_file = c->name;
+  c->output_file = out_path;
   return true;
 }
 
