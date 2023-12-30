@@ -5,6 +5,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 bool is_newer(char *to_check, char *older) {
   struct stat src_attr, prog_attr;
@@ -136,7 +137,7 @@ defer:
 bool compile_build(Compile *c) {
   DIR* build_dir = opendir("build");
   if (build_dir == NULL) {
-    mkdir("build", 775);
+    mkdir("build", 755);
   } else {
     closedir(build_dir);
   }
@@ -144,6 +145,11 @@ bool compile_build(Compile *c) {
   char *out_path = malloc(strlen("build/") + strlen(c->name));
   if (out_path == NULL) return false;
   sprintf(out_path, "build/%s", c->name);
+
+  if (access(out_path, F_OK) == 0 && is_newer(out_path, c->source_file)) {
+    c->output_file = out_path;
+    return true;
+  }
   char *args[] = {
       "cc",
       "-o",
