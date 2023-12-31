@@ -1,3 +1,4 @@
+#include <dirent.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,7 +14,6 @@
   try(compile_init((c), (name), (path), NULL, 0, true))
 
 result_t build(int argc, char *argv[]) {
-  IMPL_REBUILD(argv);
 
   if (argc >= 2 && strcmp("clean", argv[1]) == 0) {
     DIR *ck = opendir("./build");
@@ -22,12 +22,26 @@ result_t build(int argc, char *argv[]) {
     carp_log(CARP_LOG_INFO, "rm -r ./build");
     system("rm -r ./build");      
     }
+
+    if (argc == 3 && strcmp("all", argv[2]) == 0) {
+      carp_log(CARP_LOG_INFO, "rm ./carp");
+      system("rm ./carp");
+    }
+    if (argc == 3 && strcmp("rebuild", argv[2]) == 0) {
+      carp_log(CARP_LOG_INFO, "./carp");
+      system("./carp");
+      return CARP_RESULT_OK;
+    }
+    
     return CARP_RESULT_OK;
   }
+    IMPL_REBUILD(argv);
   result_t result = CARP_RESULT_OK;
+
   Compile c;
   try(compile_init(&c, "hello", "src/main.c", NULL, 0, false));
   try(compile_run(&c));
 
   return result;
 }
+
