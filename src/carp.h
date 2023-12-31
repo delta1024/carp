@@ -18,6 +18,7 @@
 typedef enum CARP_RESULT {
   CARP_RESULT_OK = 0,
   CARP_ERR_NOMEM = -1,
+  CARP_ERR_COMPILE = -2,
 } result_t;
 static int carp_errno;
 
@@ -36,6 +37,19 @@ result_t sb_append(StringBuilder *sb, char *arg);
 result_t sb_append_many(StringBuilder *sb, char **args, int args_len);
 
 
+
+/************************************************************
+ *                    compile.h                             *
+ ************************************************************/
+
+typedef struct Compile {
+  char *name, *output_file, *source_file, **args;
+  bool is_object;
+  int args_len;
+} Compile;
+
+result_t compile_init(Compile *c, char *name, char *source_file, char *args[], int arg_len, bool is_object);
+result_t compile_run(Compile *c);
 #ifdef CARP_IMPL
 /************************************************************
  *                      carp.c                              *
@@ -94,6 +108,83 @@ result_t sb_append_many(StringBuilder *sb, char **args, int args_len) {
     }
   }
   return CARP_RESULT_OK;
+}
+
+/************************************************************
+ *                    compile.c                             *
+ ************************************************************/
+// NOLINTNEXTLINE(misc-definitions-in-headers)
+result_t compile_init(Compile *c, char *name, char *source_file, char *args[], int arg_len, bool is_object) {
+  result_t result;
+  *c = (Compile){NULL, NULL, NULL, NULL, false, 0};
+
+  c->name = malloc(strlen(name) + 1);
+  if (c->name == NULL) {
+    result = CARP_ERR_NOMEM;
+    goto no_dealloc;
+  }
+  strcpy(c->name, name);
+  
+  c->source_file = malloc(strlen(source_file) + 1);
+  if (c->source_file == NULL) {
+    result = CARP_ERR_NOMEM;
+    goto free_name;
+  }
+  strcpy(c->source_file, source_file);
+  
+  if (is_object) {
+    c->is_object = true;
+    c->output_file = malloc(strlen(name) + 3 + strlen("build/"));
+    if (c->output_file == NULL) {
+      result = CARP_ERR_NOMEM;
+      goto free_dest;
+    }
+    sprintf(c->output_file, "build/%s.o", name);
+  } else {
+    c->output_file  = malloc(strlen(name) + 1 + strlen("build/"));
+    if (c->output_file == NULL) {
+      result = CARP_ERR_NOMEM;
+      goto free_dest;
+    }
+    sprintf(c->output_file, "build/%s", name);
+  }
+  if (args != NULL) {
+    c->args = malloc(sizeof(char*) * arg_len);
+      if (c->args == NULL) {
+	result = CARP_ERR_NOMEM;
+	goto free_dest;
+      }
+    for (int i = 0; i < arg_len; i++) {
+      char *buf =  malloc(strlen(args[i]) + 1);
+      if (buf == NULL) {
+	result = CARP_ERR_NOMEM;
+	goto free_args;
+      }
+      strcpy(c->args[i], buf);
+      c->args_len++;
+    }
+  }
+
+  result = CARP_RESULT_OK;
+  goto no_dealloc;
+  
+ free_args:
+  if (c->args != NULL){
+    for (int i = c->args_len - 1; i >= 0; i--) {
+      free(c->args[i]);
+    }
+    free(c->args);    
+  }
+
+ free_dest:
+  free(c->output_file);
+  c->output_file = NULL;
+ free_name:
+  free(c->name);
+  c->name = NULL;
+  
+ no_dealloc:
+  return result;
 }
 
 /************************************************************
