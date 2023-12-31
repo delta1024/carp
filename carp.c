@@ -1,3 +1,4 @@
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #define CARP_IMPL
@@ -13,9 +14,14 @@
 
 result_t build(int argc, char *argv[]) {
   IMPL_REBUILD(argv);
-  if (argc == 2 && strcmp("clean", argv[1]) == 0) {
-    printf("[COMMAND] rm -r build\n");
-    system("rm -r build");
+
+  if (argc >= 2 && strcmp("clean", argv[1]) == 0) {
+    DIR *ck = opendir("./build");
+    if (ck != NULL) {
+      closedir(ck);
+    carp_log(CARP_LOG_INFO, "rm -r ./build");
+    system("rm -r ./build");      
+    }
     return CARP_RESULT_OK;
   }
   result_t result = CARP_RESULT_OK;
