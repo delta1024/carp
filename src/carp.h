@@ -187,6 +187,41 @@ result_t compile_init(Compile *c, char *name, char *source_file, char *args[], i
   return result;
 }
 
+result_t compile_run(Compile *c) {
+  DIR* build_dir = opendir("build");
+  if (build_dir == NULL) {
+    mkdir("build", 0755);
+  } else {
+    closedir(build_dir);
+  }
+  StringBuilder sb = {0, NULL};
+  
+  if (access(c->output_file, F_OK) == 0 && is_newer(c->output_file, c->source_file)) {
+    return CARP_RESULT_OK;
+  }
+  char *args[] = {
+      "cc",
+      "-o",
+      c->output_file,
+  };
+  if (sb_append_many(&sb, args, sizeof(args) / sizeof(char *)) != CARP_RESULT_OK)
+    return CARP_ERR_NOMEM;
+  
+  if (c->args_len > 0) {
+    if (sb_append_many(&sb, c->args, c->args_len) != CARP_RESULT_OK)
+      return CARP_ERR_NOMEM;
+  }
+
+  if (sb_append(&sb, c->source_file) != CARP_RESULT_OK)
+    return CARP_ERR_NOMEM;
+
+  printf("[COMPILE] %s\n",  sb.ptr);
+  if (system(sb.ptr) == -1)
+    return CARP_ERR_COMPILE;
+
+  return CARP_RESULT_OK;
+}
+
 /************************************************************
  *                      main.c                              *
  ************************************************************/
@@ -198,6 +233,7 @@ result_t compile_init(Compile *c, char *name, char *source_file, char *args[], i
     char *binary = argv[0];						\
     if (is_newer(this_file, binary)					\
 	|| is_newer("./src/carp.h", binary)) {				\
+      printf("[INFO] rebuilding carp\n");				\
       system("cc -o carp carp.c");					\
       system("./carp");							\
       return CARP_RESULT_OK;						\
@@ -211,6 +247,9 @@ int main(int argc, char *argv[]) {
   switch (build(argc, argv)) {
   case CARP_ERR_NOMEM:
     fprintf(stderr, "OOM\n");
+    exit(EXIT_FAILURE);
+    break;
+  case CARP_ERR_COMPILE:
     exit(EXIT_FAILURE);
     break;
   default:

@@ -1,25 +1,27 @@
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 #define CARP_IMPL
 #include "./src/carp.h"
 #undef CARP_IMPL
 
+#define try(exp)                                                               \
+  if ((result = (exp)) != CARP_RESULT_OK)                                      \
+  return result
 
-result_t compile_run(Compile *c) {
-    printf("name: %s, output: %s, \nsource_file: %s\n", c->name, c->output_file, c->source_file);
-  return CARP_RESULT_OK;
-}
-
-#define try(exp) \
-  if ((result = (exp)) != CARP_RESULT_OK) \
-    return result
+#define init_obj(c, name, path)                                                \
+  try(compile_init((c), (name), (path), NULL, 0, true))
 
 result_t build(int argc, char *argv[]) {
   IMPL_REBUILD(argv);
+  if (argc == 2 && strcmp("clean", argv[1]) == 0) {
+    printf("[COMMAND] rm -r build\n");
+    system("rm -r build");
+    return CARP_RESULT_OK;
+  }
   result_t result = CARP_RESULT_OK;
   Compile c;
   try(compile_init(&c, "hello", "src/main.c", NULL, 0, false));
   try(compile_run(&c));
 
- return result;
+  return result;
 }
