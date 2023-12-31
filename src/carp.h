@@ -27,6 +27,7 @@ typedef enum CARP_RESULT {
   CARP_RESULT_OK = 0,
   CARP_ERR_NOMEM = -1,
   CARP_ERR_COMPILE = -2,
+  CARP_ERR_BAD_ARGS = -3,
 } result_t;
 static int carp_errno;
 
@@ -336,18 +337,31 @@ result_t compile_run(Compile *c) {
  *                      main.c                              *
  ************************************************************/
 
-#define IMPL_REBUILD(argv)                                                     \
-  do {                                                                         \
-    char this_file[] = __FILE__;                                               \
-    char *binary = argv[0];                                                    \
-    if (is_newer(this_file, binary) || is_newer("./src/carp.h", binary)) {     \
-      carp_log(CARP_LOG_INFO, "rebuilding carp");                              \
-      carp_log(CARP_LOG_COMPILE, "cc -o carp carp.c");                         \
-      system("cc -o carp carp.c");                                             \
-      system("./carp");                                                        \
-      return CARP_RESULT_OK;                                                   \
-    }                                                                          \
-  } while (false)
+#define IMPL_REBUILD(argv, args_str)					\
+  do {									\
+  char this_file[] = __FILE__;						\
+  char *binary = argv[0];						\
+  if (is_newer(this_file, binary) || is_newer("./src/carp.h", binary)) { \
+  carp_log(CARP_LOG_INFO, "rebuilding carp");				\
+  carp_log(CARP_LOG_COMPILE, "cc -o carp carp.c");			\
+  system("cc -o carp carp.c");						\
+  if (args_str == NULL) {						\
+    system("./carp");							\
+  } else {								\
+    StringBuilder sb = {0, NULL};					\
+    char *args[] = {							\
+      "./carp",								\
+      args_str,								\
+    };									\
+    if (sb_append_many(&sb, args, sizeof(args) / sizeof(char*))		\
+	!= CARP_RESULT_OK){						\
+      return CARP_ERR_NOMEM;						\
+    }									\
+    system(sb.ptr);							\
+  }									\
+  return CARP_RESULT_OK;						\
+  }									\
+} while (false)
 
 result_t build(int argc, char *argv[]);
 
@@ -358,9 +372,11 @@ int main(int argc, char *argv[]) {
     carp_log(CARP_LOG_ERR, "OOM");
     exit(EXIT_FAILURE);
     break;
-  case CARP_ERR_COMPILE:
+  case CARP_ERR_COMPILE: CARP_ERR_BAD_ARGS:
     exit(EXIT_FAILURE);
     break;
+
+
   default:
     break;
   }
