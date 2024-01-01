@@ -11,40 +11,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-/************************************************************
- *                       carp.h                             *
- ************************************************************/
-
-// typedef struct Builder Builder;
-typedef enum CARP_LOG_LEVEL {
-  CARP_LOG_FATAL = 0,
-  CARP_LOG_ERR,
-  CARP_LOG_INFO,
-  CARP_LOG_COMPILE,
-} CARP_LOG_LEVEL;
-
-typedef enum CARP_RESULT {
-  CARP_RESULT_OK = 0,
-  CARP_ERR_NOMEM = -1,
-  CARP_ERR_COMPILE = -2,
-  CARP_ERR_BAD_ARGS = -3,
-} result_t;
-static int carp_errno;
-
-bool is_newer(char *to_check, char *older);
-void carp_log(CARP_LOG_LEVEL level, const char *fmt, ...);
-
-/************************************************************
- *                      sb.h                                *
- ************************************************************/
-
-typedef struct {
-  int cap;
-  char *ptr;
-} StringBuilder;
-
-result_t sb_append(StringBuilder *sb, char *arg);
-result_t sb_append_many(StringBuilder *sb, char **args, int args_len);
 
 /************************************************************
  *                    compile.h                             *
@@ -84,69 +50,7 @@ result_t headers_append(Headers *d, char *path);
  ************************************************************/
 
 // NOLINTNEXTLINE(misc-definitions-in-headers)
-bool is_newer(char *to_check, char *older) {
-  struct stat src_attr, prog_attr;
-  if (stat(older, &prog_attr) == -1) {
-    perror("could not get process stats");
-    exit(EXIT_FAILURE);
-  }
-  if (stat(to_check, &src_attr) == -1) {
-    perror("could not get src file stats");
-    exit(EXIT_FAILURE);
-  }
-  if (prog_attr.st_mtim.tv_sec < src_attr.st_mtim.tv_sec) {
-    return true;
-  }
-  return false;
-}
 
-void carp_log(CARP_LOG_LEVEL level, const char *fmt, ...) {
-  char *log_message[] = {"[FATAL]", "[ERROR]", "[INFO]", "[COMPILE]"};
-  fprintf(level > CARP_LOG_ERR ? stdout : stderr, "%s ", log_message[level]);
-  va_list args;
-  va_start(args, fmt);
-  vfprintf(level > CARP_LOG_ERR ? stdout : stderr, fmt, args);
-  va_end(args);
-  putchar('\n');
-}
-
-/************************************************************
- *                       sb.c                               *
- ************************************************************/
-
-// NOLINTNEXTLINE(misc-definitions-in-headers)
-result_t sb_append(StringBuilder *sb, char *arg) {
-  int arg_len = strlen(arg);
-  int str_len;
-  if (sb->ptr != NULL) {
-    str_len = strlen(sb->ptr);
-  } else {
-    str_len = 0;
-  }
-  sb->ptr = (char *)realloc(sb->ptr, arg_len + str_len + 3);
-  if (sb->ptr == NULL) {
-    return CARP_ERR_NOMEM;
-  }
-  if (str_len != 0) {
-    sb->ptr[str_len] = ' ';
-    strcpy(&sb->ptr[str_len + 1], arg);
-  } else {
-    strcpy(sb->ptr, arg);
-  }
-
-  return CARP_RESULT_OK;
-}
-
-// NOLINTNEXTLINE(misc-definitions-in-headers)
-result_t sb_append_many(StringBuilder *sb, char **args, int args_len) {
-  result_t result;
-  for (int i = 0; i < args_len; i++) {
-    if ((result = sb_append(sb, args[i])) != CARP_RESULT_OK) {
-      return result;
-    }
-  }
-  return CARP_RESULT_OK;
-}
 
 /************************************************************
  *                    compile.c                             *
