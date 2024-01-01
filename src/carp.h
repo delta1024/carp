@@ -18,7 +18,7 @@ typedef enum CARP_LOG_LEVEL {
   CARP_LOG_FATAL = 0,
   CARP_LOG_ERR,
   CARP_LOG_INFO,
-  CARP_LOG_COMMAND,
+  CARP_LOG_CMD,
 } CARP_LOG_LEVEL;
 
 typedef enum CARP_RESULT {
@@ -46,11 +46,11 @@ typedef struct {
 } StringBuilder;
 
 /**
- * @returns true if an error has occured.
+ * @returns false if an error has occured.
  */
 bool sb_append(StringBuilder *sb, char *arg);
 /**
- * @returns true if an error has occured.
+ * @returns false if an error has occured.
  */
 bool sb_append_many(StringBuilder *sb, char **args, int args_len);
 
@@ -78,7 +78,6 @@ typedef struct Deps {
   Compile **ptr;
   int count;
   int cap;
-
 } Deps;
 
 typedef struct Headers {
@@ -86,16 +85,21 @@ typedef struct Headers {
   int cap, count;
 } Headers;
 
+typedef enum CompileMode {
+  COMPILE_MODE_BINARY,
+  COMPILE_MODE_OBJECT,
+} CompileMode;
+
 struct Compile {
   char *name, *output_file, *source_file, **args;
   Deps deps;
   Headers headers;
-  bool is_object;
+  CompileMode mode;
   int args_len;
 };
 
 bool compile_init(Compile *c, char *name, char *source_file, char *args[],
-                  int arg_len, bool is_object);
+                  int arg_len, CompileMode mode);
 bool compile_needs_rebuild(Compile *c);
 bool compile_run(Compile *c);
 bool deps_append(Deps *d, Compile *c);
@@ -131,7 +135,7 @@ bool carp_directory_exists(char *path) {
   }
 }
 void carp_log(CARP_LOG_LEVEL level, const char *fmt, ...) {
-  char *log_message[] = {"[FATAL]", "[ERROR]", "[INFO]", "[COMMAND]"};
+  char *log_message[] = {"[FATAL]", "[ERROR]", "[INFO]", "[CMD]"};
   fprintf(level > CARP_LOG_ERR ? stdout : stderr, "%s ", log_message[level]);
   va_list args;
   va_start(args, fmt);
@@ -235,7 +239,7 @@ bool cmd_run(Cmd *cmd) {
     carp_perror("cmd_run");
     return false;
   }
-  carp_log(CARP_LOG_INFO, sb.ptr);
+  carp_log(CARP_LOG_CMD, sb.ptr);
   if (system(sb.ptr) < 0) {
     perror("cmd_run");
     return false;
@@ -277,7 +281,7 @@ bool headers_append(Headers *header, char *arg) {
 }
 // NOLINTNEXTLINE(misc-definitions-in-headers)
 bool compile_init(Compile *c, char *name, char *source_file, char *args[],
-                  int arg_len, bool is_object) {
+                  int arg_len, CompileMode mode) {
   bool result;
   *c = (Compile){NULL, NULL, NULL, NULL, (Deps){0}, (Headers){0}, false, 0};
 
@@ -297,24 +301,33 @@ bool compile_init(Compile *c, char *name, char *source_file, char *args[],
   }
   strcpy(c->source_file, source_file);
 
-  if (is_object) {
-    c->is_object = true;
-    c->output_file = malloc(strlen(name) + 3 + strlen("build/"));
-    if (c->output_file == NULL) {
-      result = false;
-      carp_errno = CARP_ERR_NOMEM;
-      goto free_dest;
-    }
-    sprintf(c->output_file, "build/%s.o", name);
-  } else {
-    c->output_file = malloc(strlen(name) + 1 + strlen("build/"));
-    if (c->output_file == NULL) {
-      result = false;
-      carp_errno = CARP_ERR_NOMEM;
-      goto free_dest;
-    }
-    sprintf(c->output_file, "build/%s", name);
+  CompileMode id;
+  int pad_len;
+  char *fmt_str;
+  switch (mode) {
+  case COMPILE_MODE_OBJECT: {
+    pad_len = 3;
+    fmt_str = "build/%s.o";
+    id = COMPILE_MODE_OBJECT;
+  } break;
+  case COMPILE_MODE_BINARY: {
+    id = COMPILE_MODE_BINARY;
+    pad_len = 2;
+    fmt_str =  "build/%s";
+  } break;
+  default:
+    break;
   }
+  
+  c->mode = id;
+  c->output_file = malloc(strlen(name) + pad_len + strlen("build/"));
+  if (c->output_file == NULL) {
+    result = false;
+    carp_errno = CARP_ERR_NOMEM;
+    goto free_dest;
+  }
+  sprintf(c->output_file, fmt_str, name);
+  
   if (args != NULL) {
     c->args = malloc(sizeof(char *) * arg_len);
     if (c->args == NULL) {
@@ -393,9 +406,13 @@ bool compile_run(Compile *c) {
   if (!cmd_append(&cmd, "cc", "-o", c->output_file))
     return false;
 
-  if (c->is_object) {
+  switch (c->mode) {
+  case COMPILE_MODE_OBJECT: {
     if (!cmd_append(&cmd, "-c"))
       return false;
+  } break;
+  case COMPILE_MODE_BINARY:
+    break;
   }
 
   if (c->args_len > 0) {
@@ -425,12 +442,10 @@ bool compile_run(Compile *c) {
 
 #define IMPL_REBUILD(argv, args_str)                                           \
   do {                                                                         \
-    char this_file[] = __FILE__;                                               \
-    char *binary = argv[0];                                                    \
-    if (is_newer(this_file, binary) || is_newer("./src/carp.h", binary)) {     \
+    if (is_newer(__FILE__, argv[0]) || is_newer("./src/carp.h", argv[0])) {    \
       carp_log(CARP_LOG_INFO, "rebuilding carp");                              \
-      carp_log(CARP_LOG_INFO, "cc -o carp carp.c");                            \
-      system("cc -o carp carp.c");                                             \
+      carp_log(CARP_LOG_CMD, "cc -o carp "__FILE__);                           \
+      system("cc -o carp "__FILE__);                                           \
       if (args_str == NULL) {                                                  \
         system("./carp");                                                      \
       } else {                                                                 \
