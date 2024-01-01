@@ -1,4 +1,6 @@
 #ifndef CARP_H_
+#define CARP_H_
+
 #include <dirent.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -85,25 +87,59 @@ typedef struct Headers {
   int cap, count;
 } Headers;
 
+typedef struct Args {
+  char **ptr;
+  int cap, count;
+} Args;
+
+typedef struct IncludePaths {
+  char **ptr;
+  int cap, count;
+} IncludePaths;
+
+typedef struct SysLibs {
+  char **ptr;
+  int cap, count;
+} SysLibs;
+
+typedef struct SysLibPaths {
+  char **ptr;
+  int cap, count;
+} SysLibPath;
+
 typedef enum CompileMode {
   COMPILE_MODE_BINARY,
   COMPILE_MODE_OBJECT,
 } CompileMode;
 
 struct Compile {
-  char *name, *output_file, *source_file, **args;
+  char *name, *output_file, *source_file;
   Deps deps;
+  Args args;
+  IncludePaths include_paths;
+  SysLibPath sys_lib_paths;
   Headers headers;
+  SysLibs sys_libs;
   CompileMode mode;
   int args_len;
 };
 
-bool compile_init(Compile *c, char *name, char *source_file, char *args[],
-                  int arg_len, CompileMode mode);
+bool compile_init(Compile *c, char *name, char *source_file, CompileMode mode);
 bool compile_needs_rebuild(Compile *c);
 bool compile_run(Compile *c);
 bool deps_append(Deps *d, Compile *c);
+bool include_paths_append(IncludePaths *i, char *path);
+bool sys_libs_append(SysLibs *l, char *lib_name);
+bool sys_lib_path_append(SysLibPath *paths, char *path);
 bool headers_append(Headers *header, char *path);
+bool args_append_arg(Args *args, char *path);
+bool args_append_many(Args *args, int count, ...);
+#define args_append(arg, ...)                                                  \
+  (args_append_many((arg), (sizeof((char *[]){__VA_ARGS__}) / sizeof(char *)), \
+                    __VA_ARGS__))
+
+char *make_flag(char flag, char *name, char *value);
+
 #ifdef IMPL_CARP
 /************************************************************
  *                       carp.c                             *
@@ -199,10 +235,11 @@ bool sb_append_many(StringBuilder *sb, char **args, int args_len) {
   }
   return true;
 }
+
 /************************************************************
  *                     cmd.c                                *
  ************************************************************/
-
+// NOLINTNEXTLINE(misc-definitions-in-headers)
 bool cmd_append_arg(Cmd *cmd, char *arg) {
   if (cmd->cap < cmd->count + 1) {
     int old_cap = cmd->cap;
@@ -216,6 +253,7 @@ bool cmd_append_arg(Cmd *cmd, char *arg) {
   cmd->items[cmd->count++] = arg;
   return true;
 }
+// NOLINTNEXTLINE(misc-definitions-in-headers)
 bool cmd_append_args(Cmd *cmd, int arg_num, ...) {
   va_list args;
   va_start(args, arg_num);
@@ -226,9 +264,10 @@ bool cmd_append_args(Cmd *cmd, int arg_num, ...) {
       return false;
     }
   }
+  va_end(args);
   return true;
 }
-
+// NOLINTNEXTLINE(misc-definitions-in-headers)
 bool cmd_run(Cmd *cmd) {
   StringBuilder sb = {0};
 
@@ -247,9 +286,8 @@ bool cmd_run(Cmd *cmd) {
   free(sb.ptr);
   return true;
 }
-
 /************************************************************
- *                    compile.c                             *
+ *                 compile.c                                *
  ************************************************************/
 
 // NOLINTNEXTLINE(misc-definitions-in-headers)
@@ -280,10 +318,9 @@ bool headers_append(Headers *header, char *arg) {
   return true;
 }
 // NOLINTNEXTLINE(misc-definitions-in-headers)
-bool compile_init(Compile *c, char *name, char *source_file, char *args[],
-                  int arg_len, CompileMode mode) {
+bool compile_init(Compile *c, char *name, char *source_file, CompileMode mode) {
   bool result;
-  *c = (Compile){NULL, NULL, NULL, NULL, (Deps){0}, (Headers){0}, false, 0};
+  *c = (Compile){0};
 
   c->name = malloc(strlen(name) + 1);
   if (c->name == NULL) {
@@ -301,25 +338,22 @@ bool compile_init(Compile *c, char *name, char *source_file, char *args[],
   }
   strcpy(c->source_file, source_file);
 
-  CompileMode id;
   int pad_len;
   char *fmt_str;
   switch (mode) {
   case COMPILE_MODE_OBJECT: {
     pad_len = 3;
     fmt_str = "build/%s.o";
-    id = COMPILE_MODE_OBJECT;
   } break;
   case COMPILE_MODE_BINARY: {
-    id = COMPILE_MODE_BINARY;
     pad_len = 2;
-    fmt_str =  "build/%s";
+    fmt_str = "build/%s";
   } break;
   default:
     break;
   }
-  
-  c->mode = id;
+
+  c->mode = mode;
   c->output_file = malloc(strlen(name) + pad_len + strlen("build/"));
   if (c->output_file == NULL) {
     result = false;
@@ -327,36 +361,9 @@ bool compile_init(Compile *c, char *name, char *source_file, char *args[],
     goto free_dest;
   }
   sprintf(c->output_file, fmt_str, name);
-  
-  if (args != NULL) {
-    c->args = malloc(sizeof(char *) * arg_len);
-    if (c->args == NULL) {
-      result = false;
-      carp_errno = CARP_ERR_NOMEM;
-      goto free_dest;
-    }
-    for (int i = 0; i < arg_len; i++) {
-      char *buf = malloc(strlen(args[i]) + 1);
-      if (buf == NULL) {
-        result = false;
-        carp_errno = CARP_ERR_NOMEM;
-        goto free_args;
-      }
-      strcpy(c->args[i], buf);
-      c->args_len++;
-    }
-  }
 
   result = true;
   goto no_dealloc;
-
-free_args:
-  if (c->args != NULL) {
-    for (int i = c->args_len - 1; i >= 0; i--) {
-      free(c->args[i]);
-    }
-    free(c->args);
-  }
 
 free_dest:
   free(c->output_file);
@@ -415,9 +422,39 @@ bool compile_run(Compile *c) {
     break;
   }
 
-  if (c->args_len > 0) {
-    for (int i = 0; i < c->args_len; i++) {
-      if (!cmd_append_arg(&cmd, c->args[i]))
+  for (int i = 0; i < c->sys_lib_paths.count; i++) {
+    char *lib;
+    if ((lib = make_flag('L', c->sys_lib_paths.ptr[i], NULL)) == NULL) {
+      carp_perror("compile");
+      return false;
+    }
+    if (!cmd_append(&cmd, lib))
+      return false;
+  }
+
+  for (int i = 0; i < c->sys_libs.count; i++) {
+    char *lib;
+    if ((lib = make_flag('l', c->sys_libs.ptr[i], NULL)) == NULL) {
+      carp_perror("compile");
+      return false;
+    }
+    if (!cmd_append(&cmd, lib))
+      return false;
+  }
+
+  for (int i = 0; i < c->include_paths.count; i++) {
+    char *flag;
+    if ((flag = make_flag('I', c->include_paths.ptr[i], NULL)) == NULL) {
+      carp_perror("compile");
+      return false;
+    }
+    if (!cmd_append_arg(&cmd, flag))
+      return false;
+  }
+
+  if (c->args.count > 0) {
+    for (int i = 0; i < c->args.count; i++) {
+      if (!cmd_append_arg(&cmd, c->args.ptr[i]))
         return false;
     }
   }
@@ -438,6 +475,89 @@ bool compile_run(Compile *c) {
 
   free(cmd.items);
   return true;
+}
+bool include_paths_append(IncludePaths *i, char *path) {
+  if (i->count + 1 > i->cap) {
+    i->cap = i->cap < 8 ? 8 : i->cap * 2;
+    i->ptr = realloc(i->ptr, sizeof(char *) * i->cap);
+    if (i->ptr == NULL) {
+      carp_errno = CARP_ERR_NOMEM;
+      return false;
+    }
+  }
+  i->ptr[i->count++] = path;
+  return true;
+}
+bool args_append_arg(Args *args, char *path) {
+  if (args->count + 1 > args->cap) {
+    args->cap = args->cap < 8 ? 8 : args->cap * 2;
+    args->ptr = realloc(args->ptr, sizeof(char *) * args->cap);
+    if (args->ptr == NULL) {
+      carp_errno = CARP_ERR_NOMEM;
+      return false;
+    }
+  }
+  args->ptr[args->count++] = path;
+  return true;
+}
+bool args_append_many(Args *args, int count, ...) {
+  va_list func_args;
+  va_start(func_args, count);
+  for (int i = 0; i < count; i++) {
+    char *ptr = va_arg(func_args, char *);
+    if (!args_append_arg(args, ptr)) {
+      carp_perror("args_append_many");
+      return false;
+    }
+  }
+  return true;
+}
+
+bool sys_libs_append(SysLibs *l, char *lib) {
+  if (l->count + 1 > l->cap) {
+    l->cap = l->cap < 8 ? 8 : l->cap * 2;
+    l->ptr = realloc(l->ptr, sizeof(char *) * l->cap);
+    if (l->ptr == NULL) {
+      carp_errno = CARP_ERR_NOMEM;
+      return false;
+    }
+  }
+  l->ptr[l->count++] = lib;
+  return true;
+}
+
+bool sys_lib_path_append(SysLibPath *p, char *path) {
+  if (p->count + 1 > p->cap) {
+    p->cap = p->cap < 8 ? 8 : p->cap * 2;
+    p->ptr = realloc(p->ptr, sizeof(char *) * p->cap);
+    if (p->ptr == NULL) {
+      carp_errno = CARP_ERR_NOMEM;
+      return false;
+    }
+  }
+  p->ptr[p->count++] = path;
+  return true;
+}
+
+char *make_flag(char flag, char *name, char *value) {
+  char *fmt_str;
+  int str_len;
+  if (value == NULL) {
+    fmt_str = "-%c%s";
+    str_len = strlen(name) + 3;
+  } else {
+    fmt_str = "-%c%s=%s";
+    str_len = strlen(name) + strlen(value) + 4;
+  }
+  char *buff;
+  if ((buff = malloc(str_len)) == NULL) {
+    carp_errno = CARP_ERR_NOMEM;
+    return NULL;
+  }
+
+  sprintf(buff, fmt_str, flag, name, value);
+  return buff;
+  return NULL;
 }
 
 #define IMPL_REBUILD(argv, args_str)                                           \
@@ -462,5 +582,6 @@ bool compile_run(Compile *c) {
       return CARP_RESULT_OK;                                                   \
     }                                                                          \
   } while (false)
-#endif // IMPL_CARP
+#endif
+
 #endif // CARP_H_
