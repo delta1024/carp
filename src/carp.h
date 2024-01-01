@@ -78,7 +78,6 @@ typedef struct Deps {
   Compile **ptr;
   int count;
   int cap;
-
 } Deps;
 
 typedef struct Headers {
@@ -86,16 +85,21 @@ typedef struct Headers {
   int cap, count;
 } Headers;
 
+typedef enum CompileMode {
+  COMPILE_MODE_BINARY,
+  COMPILE_MODE_OBJECT,
+} CompileMode;
+
 struct Compile {
   char *name, *output_file, *source_file, **args;
   Deps deps;
   Headers headers;
-  bool is_object;
+  CompileMode mode;
   int args_len;
 };
 
 bool compile_init(Compile *c, char *name, char *source_file, char *args[],
-                  int arg_len, bool is_object);
+                  int arg_len, CompileMode mode);
 bool compile_needs_rebuild(Compile *c);
 bool compile_run(Compile *c);
 bool deps_append(Deps *d, Compile *c);
@@ -277,7 +281,7 @@ bool headers_append(Headers *header, char *arg) {
 }
 // NOLINTNEXTLINE(misc-definitions-in-headers)
 bool compile_init(Compile *c, char *name, char *source_file, char *args[],
-                  int arg_len, bool is_object) {
+                  int arg_len, CompileMode mode) {
   bool result;
   *c = (Compile){NULL, NULL, NULL, NULL, (Deps){0}, (Headers){0}, false, 0};
 
@@ -297,8 +301,9 @@ bool compile_init(Compile *c, char *name, char *source_file, char *args[],
   }
   strcpy(c->source_file, source_file);
 
-  if (is_object) {
-    c->is_object = true;
+  switch (mode) {
+  case COMPILE_MODE_OBJECT: {
+    c->mode = COMPILE_MODE_OBJECT;
     c->output_file = malloc(strlen(name) + 3 + strlen("build/"));
     if (c->output_file == NULL) {
       result = false;
@@ -306,7 +311,9 @@ bool compile_init(Compile *c, char *name, char *source_file, char *args[],
       goto free_dest;
     }
     sprintf(c->output_file, "build/%s.o", name);
-  } else {
+  } break;
+  case COMPILE_MODE_BINARY:{
+      c->mode = COMPILE_MODE_BINARY;
     c->output_file = malloc(strlen(name) + 1 + strlen("build/"));
     if (c->output_file == NULL) {
       result = false;
@@ -314,6 +321,9 @@ bool compile_init(Compile *c, char *name, char *source_file, char *args[],
       goto free_dest;
     }
     sprintf(c->output_file, "build/%s", name);
+    } break;
+  default:
+    break;
   }
   if (args != NULL) {
     c->args = malloc(sizeof(char *) * arg_len);
@@ -393,9 +403,14 @@ bool compile_run(Compile *c) {
   if (!cmd_append(&cmd, "cc", "-o", c->output_file))
     return false;
 
-  if (c->is_object) {
+  switch (c->mode) {
+  case  COMPILE_MODE_OBJECT: {
     if (!cmd_append(&cmd, "-c"))
       return false;
+  } break;
+  case COMPILE_MODE_BINARY:
+    break;
+   
   }
 
   if (c->args_len > 0) {
