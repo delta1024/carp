@@ -502,7 +502,7 @@ bool compile_run(Compile *c) {
 
 #define IMPL_REBUILD(argv, args_str)                                           \
   do {                                                                         \
-    if (is_newer(__FILE__, argv[0]) || is_newer("./src/carp.h", argv[0])) {    \
+    if (is_newer(__FILE__, argv) || is_newer("./src/carp.h", argv)) {    \
       carp_log(CARP_LOG_INFO, "rebuilding carp");                              \
       carp_log(CARP_LOG_CMD, "cc -o carp "__FILE__);                           \
       system("cc -o carp "__FILE__);                                           \
