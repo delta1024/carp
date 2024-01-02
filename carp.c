@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#define CARP_HEADER_PATH "./src/carp.h"
 #define IMPL_CARP
 #include "./src/carp.h"
 #undef IMPL_CARP
@@ -24,14 +25,7 @@ bool init_obj(struct object_file *file) {
 void compile_program();
 
 int main(int argc, char *argv[]) {
-  char *cmd = NULL;
-  if (argc >= 2) {
-    StringBuilder sb = {0};
-    sb_append_many(&sb, &argv[1], argc - 1);
-    cmd = sb.ptr;
-  }
-
-  IMPL_REBUILD(argv[0], cmd);
+  IMPL_REBUILD(argc, argv);
 
   if (argc >= 2) {
     if (strcmp("clean", argv[1]) == 0) {

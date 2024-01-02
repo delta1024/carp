@@ -82,8 +82,6 @@ typedef struct Deps {
   int cap;
 } Deps;
 
-
-
 typedef struct Args {
   char **ptr;
   int cap, count;
@@ -119,10 +117,10 @@ bool args_append_many(Args *args, int count, ...);
 #define args_append(arg, ...)                                                  \
   (args_append_many((arg), (sizeof((char *[]){__VA_ARGS__}) / sizeof(char *)), \
                     __VA_ARGS__))
-#define include_paths_append(inc, path) (args_append_arg((Args*)(inc), (path)))
-#define sys_libs_append(inc, path) (args_append_arg((Args*)(inc), (path)))
-#define sys_lib_path_append(inc, path) (args_append_arg((Args*)(inc), (path)))
-#define headers_append(inc, path) (args_append_arg((Args*)(inc), (path)))
+#define include_paths_append(inc, path) (args_append_arg((Args *)(inc), (path)))
+#define sys_libs_append(inc, path) (args_append_arg((Args *)(inc), (path)))
+#define sys_lib_path_append(inc, path) (args_append_arg((Args *)(inc), (path)))
+#define headers_append(inc, path) (args_append_arg((Args *)(inc), (path)))
 
 char *make_flag(char flag, char *name, char *value);
 
@@ -495,32 +493,41 @@ bool compile_run(Compile *c) {
   free(cmd.items);
   return true;
 }
-
-
-
-
-
-#define IMPL_REBUILD(argv, args_str)                                           \
+#ifndef CARP_HEADER_PATH
+#define CARP_HEADER_PATH "./carp.h"
+#endif
+#ifndef CARP_BUILD_SCRIPT
+#define CARP_BUILD_SCRIPT "./carp.c"
+#endif
+#define IMPL_REBUILD(argc, argv)                                               \
   do {                                                                         \
-    if (is_newer(__FILE__, argv) || is_newer("./src/carp.h", argv)) {    \
+    StringBuilder sb = {0};                                                    \
+    if (argc >= 2) {                                                           \
+      sb_append_many(&sb, &argv[1], argc - 1);                                 \
+    }                                                                          \
+    if (is_newer(__FILE__, argv[0]) || is_newer(CARP_HEADER_PATH, argv[0]) ||  \
+        is_newer(CARP_BUILD_SCRIPT, argv[0])) {                                \
       carp_log(CARP_LOG_INFO, "rebuilding carp");                              \
       carp_log(CARP_LOG_CMD, "cc -o carp "__FILE__);                           \
       system("cc -o carp "__FILE__);                                           \
-      if (args_str == NULL) {                                                  \
+      if (sb.ptr == NULL) {                                                    \
         system("./carp");                                                      \
       } else {                                                                 \
-        StringBuilder sb = {0};                                                \
+        StringBuilder sb2 = {0};                                               \
         char *args[] = {                                                       \
             "./carp",                                                          \
-            args_str,                                                          \
+            sb.ptr,                                                            \
         };                                                                     \
-        if (!sb_append_many(&sb, args, sizeof(args) / sizeof(char *))) {       \
+        if (!sb_append_many(&sb2, args, 2)) {                                  \
           return CARP_ERR_NOMEM;                                               \
         }                                                                      \
-        system(sb.ptr);                                                        \
+        system(sb2.ptr);                                                       \
+        free(sb2.ptr);                                                         \
       }                                                                        \
+      free(sb.ptr);                                                            \
       return CARP_RESULT_OK;                                                   \
     }                                                                          \
+    free(sb.ptr);                                                              \
   } while (false)
 #endif
 
