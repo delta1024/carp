@@ -82,31 +82,17 @@ typedef struct Deps {
   int cap;
 } Deps;
 
-typedef struct Headers {
-  char **ptr;
-  int cap, count;
-} Headers;
+
 
 typedef struct Args {
   char **ptr;
   int cap, count;
 } Args;
 
-typedef struct IncludePaths {
-  char **ptr;
-  int cap, count;
-} IncludePaths;
-
-typedef struct SysLibs {
-  char **ptr;
-  int cap, count;
-} SysLibs;
-
-typedef struct SysLibPaths {
-  char **ptr;
-  int cap, count;
-} SysLibPath;
-
+typedef struct Args IncludePaths;
+typedef struct Args SysLibs;
+typedef struct Args SysLibPath;
+typedef struct Args Headers;
 typedef enum CompileMode {
   COMPILE_MODE_BINARY,
   COMPILE_MODE_OBJECT,
@@ -128,15 +114,15 @@ bool compile_init(Compile *c, char *name, char *source_file, CompileMode mode);
 bool compile_needs_rebuild(Compile *c);
 bool compile_run(Compile *c);
 bool deps_append(Deps *d, Compile *c);
-bool include_paths_append(IncludePaths *i, char *path);
-bool sys_libs_append(SysLibs *l, char *lib_name);
-bool sys_lib_path_append(SysLibPath *paths, char *path);
-bool headers_append(Headers *header, char *path);
 bool args_append_arg(Args *args, char *path);
 bool args_append_many(Args *args, int count, ...);
 #define args_append(arg, ...)                                                  \
   (args_append_many((arg), (sizeof((char *[]){__VA_ARGS__}) / sizeof(char *)), \
                     __VA_ARGS__))
+#define include_paths_append(inc, path) (args_append_arg((Args*)(inc), (path)))
+#define sys_libs_append(inc, path) (args_append_arg((Args*)(inc), (path)))
+#define sys_lib_path_append(inc, path) (args_append_arg((Args*)(inc), (path)))
+#define headers_append(inc, path) (args_append_arg((Args*)(inc), (path)))
 
 char *make_flag(char flag, char *name, char *value);
 
@@ -291,6 +277,7 @@ bool cmd_run(Cmd *cmd) {
  ************************************************************/
 
 // NOLINTNEXTLINE(misc-definitions-in-headers)
+
 bool deps_append(Deps *d, Compile *c) {
   if (d->cap < d->count + 1) {
     int old_cap = d->cap;
@@ -304,19 +291,51 @@ bool deps_append(Deps *d, Compile *c) {
   d->ptr[d->count++] = c;
   return true;
 }
-bool headers_append(Headers *header, char *arg) {
-  if (header->cap < header->count + 1) {
-    int old_cap = header->cap;
-    header->cap = old_cap < 8 ? 8 : old_cap * 2;
-    header->ptr = realloc(header->ptr, sizeof(char *) * header->cap);
-    if (header->ptr == NULL) {
+bool args_append_arg(Args *args, char *path) {
+  if (args->count + 1 > args->cap) {
+    args->cap = args->cap < 8 ? 8 : args->cap * 2;
+    args->ptr = realloc(args->ptr, sizeof(char *) * args->cap);
+    if (args->ptr == NULL) {
       carp_errno = CARP_ERR_NOMEM;
       return false;
     }
   }
-  header->ptr[header->count++] = arg;
+  args->ptr[args->count++] = path;
   return true;
 }
+bool args_append_many(Args *args, int count, ...) {
+  va_list func_args;
+  va_start(func_args, count);
+  for (int i = 0; i < count; i++) {
+    char *ptr = va_arg(func_args, char *);
+    if (!args_append_arg(args, ptr)) {
+      carp_perror("args_append_many");
+      return false;
+    }
+  }
+  return true;
+}
+
+char *make_flag(char flag, char *name, char *value) {
+  char *fmt_str;
+  int str_len;
+  if (value == NULL) {
+    fmt_str = "-%c%s";
+    str_len = strlen(name) + 3;
+  } else {
+    fmt_str = "-%c%s=%s";
+    str_len = strlen(name) + strlen(value) + 4;
+  }
+  char *buff;
+  if ((buff = malloc(str_len)) == NULL) {
+    carp_errno = CARP_ERR_NOMEM;
+    return NULL;
+  }
+
+  sprintf(buff, fmt_str, flag, name, value);
+  return buff;
+}
+
 // NOLINTNEXTLINE(misc-definitions-in-headers)
 bool compile_init(Compile *c, char *name, char *source_file, CompileMode mode) {
   bool result;
@@ -476,89 +495,10 @@ bool compile_run(Compile *c) {
   free(cmd.items);
   return true;
 }
-bool include_paths_append(IncludePaths *i, char *path) {
-  if (i->count + 1 > i->cap) {
-    i->cap = i->cap < 8 ? 8 : i->cap * 2;
-    i->ptr = realloc(i->ptr, sizeof(char *) * i->cap);
-    if (i->ptr == NULL) {
-      carp_errno = CARP_ERR_NOMEM;
-      return false;
-    }
-  }
-  i->ptr[i->count++] = path;
-  return true;
-}
-bool args_append_arg(Args *args, char *path) {
-  if (args->count + 1 > args->cap) {
-    args->cap = args->cap < 8 ? 8 : args->cap * 2;
-    args->ptr = realloc(args->ptr, sizeof(char *) * args->cap);
-    if (args->ptr == NULL) {
-      carp_errno = CARP_ERR_NOMEM;
-      return false;
-    }
-  }
-  args->ptr[args->count++] = path;
-  return true;
-}
-bool args_append_many(Args *args, int count, ...) {
-  va_list func_args;
-  va_start(func_args, count);
-  for (int i = 0; i < count; i++) {
-    char *ptr = va_arg(func_args, char *);
-    if (!args_append_arg(args, ptr)) {
-      carp_perror("args_append_many");
-      return false;
-    }
-  }
-  return true;
-}
 
-bool sys_libs_append(SysLibs *l, char *lib) {
-  if (l->count + 1 > l->cap) {
-    l->cap = l->cap < 8 ? 8 : l->cap * 2;
-    l->ptr = realloc(l->ptr, sizeof(char *) * l->cap);
-    if (l->ptr == NULL) {
-      carp_errno = CARP_ERR_NOMEM;
-      return false;
-    }
-  }
-  l->ptr[l->count++] = lib;
-  return true;
-}
 
-bool sys_lib_path_append(SysLibPath *p, char *path) {
-  if (p->count + 1 > p->cap) {
-    p->cap = p->cap < 8 ? 8 : p->cap * 2;
-    p->ptr = realloc(p->ptr, sizeof(char *) * p->cap);
-    if (p->ptr == NULL) {
-      carp_errno = CARP_ERR_NOMEM;
-      return false;
-    }
-  }
-  p->ptr[p->count++] = path;
-  return true;
-}
 
-char *make_flag(char flag, char *name, char *value) {
-  char *fmt_str;
-  int str_len;
-  if (value == NULL) {
-    fmt_str = "-%c%s";
-    str_len = strlen(name) + 3;
-  } else {
-    fmt_str = "-%c%s=%s";
-    str_len = strlen(name) + strlen(value) + 4;
-  }
-  char *buff;
-  if ((buff = malloc(str_len)) == NULL) {
-    carp_errno = CARP_ERR_NOMEM;
-    return NULL;
-  }
 
-  sprintf(buff, fmt_str, flag, name, value);
-  return buff;
-  return NULL;
-}
 
 #define IMPL_REBUILD(argv, args_str)                                           \
   do {                                                                         \
